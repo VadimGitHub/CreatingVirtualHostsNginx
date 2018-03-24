@@ -1,0 +1,101 @@
+#!/bin/bash
+
+# Файл конфигурации
+source ./config.cfg
+
+# Скрипт должен выполнять ТОЛЬКО от пользователя root
+you=`whoami`
+if  [ $you != "root" ]; then
+    echo "Для выполнения скрипта нужны права root"
+    exit
+fi
+
+# Функция для выхода из скрипта
+function miss {
+    echo -n $1
+    read index
+    case "$index" in
+        n|N) exit ;;
+    esac
+}
+
+echo -n 'Создать новый домен nginx(y/n) '
+
+read item
+case "$item" in
+    y|Y)
+        fullPath="${DPATH}${DOMEN}"
+        echo '-----------------  КОНФИГУРАЦИЯ -----------------'
+        echo "Имя домена: $DOMEN"
+        echo "Директория для домена: $DPATH"
+        echo "Полный путь к домену: ${DPATH}${DOMEN}"
+        echo "Путь к файлу донору для конфига домена: $DEFCONF"
+        echo '----------------------------------'
+        miss "Продолжить(y/n)"
+
+        # ------------------ Проверка на существование директории
+        if  [ -d $fullPath ]; then
+            miss "Ошибка! Данная директория уже существует. Продолжить?(y/n): "
+        else
+        # ------------------ Создание директории для домена
+            if mkdir -p $fullPath; then
+                echo "Директория $fullPath создана."
+                chown -R $MYUSER $fullPath
+                chmod -R 755 /var/www
+            else
+                miss "Ошибка создания директории. Продолжить?(y/n) "
+            fi
+        fi
+
+        # ------------------ Копирование конфигурационного файла
+        if  [ -f $DEFCONF ]; then
+            if  [ -f "${AVAILABLE}${DOMEN}" ]; then
+                echo -n "Конфигурационный файл уже существует. Открыть для изменения?(y/n) "
+                read index
+                case "$index" in
+                    y|Y) nano "${AVAILABLE}${DOMEN}"
+                        service nginx restart
+                    ;;
+                esac
+            else
+                cp $DEFCONF "${AVAILABLE}${DOMEN}"
+                if [ $? -ne 0 ]; then
+                    miss "Продолжить?(y/n): "
+                fi
+
+                # В ручную изменяем настройки конфига которые необходимы
+                nano "${AVAILABLE}${DOMEN}"
+
+                # Создаем ссылку
+                sudo ln -s "${AVAILABLE}${DOMEN}" $ENABLED
+                if [ $? -ne 0 ]; then
+                    miss "Не удалось создать символическую ссылкуна файл конфигурации. Продолжить?(y/n): "
+                fi
+                service nginx restart
+            fi
+        else
+            miss "Ошибка! Конфигурационный файл не найден! Продолжить?(y/n): "
+        fi
+
+        # ------------------ Прописываем IP в файл /etc/hosts
+        echo -n "Добавить запись в /etc/hosts?(y/n):"
+            read etch
+            case "$etch" in
+                y|Y) echo -e "\n$HOST\t$DOMEN" >> "/etc/hosts"
+            ;;
+        esac
+
+        # ------------------ Создаем файл index.php
+        echo -n "Добавить файл index.php(y/n):"
+        read index
+        case "$index" in
+            y|Y) echo -e "<?php\nphpinfo();" >> "${fullPath}/index.php"
+            if [ $? -ne 0 ]; then
+                miss "Не удалось создать index.php. Продолжить?(y/n): "
+            fi
+            ;;
+        esac
+        ;;
+    n|N) exit;;
+    *) exit;;
+esac
